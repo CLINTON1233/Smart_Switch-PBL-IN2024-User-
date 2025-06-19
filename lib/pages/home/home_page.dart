@@ -8,7 +8,8 @@ import 'package:smart_switch/pages/home/saklar3_page.dart';
 import 'package:smart_switch/pages/home/saklar4_page.dart';
 import 'package:smart_switch/pages/profile/profile_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:fl_chart/fl_chart.dart'; // Tambahkan ini ke pubspec.yaml
+import 'package:fl_chart/fl_chart.dart';
+import 'package:smart_switch/services/weather_services.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -23,7 +24,66 @@ class _HomePageState extends State<HomePage> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool isSwitchOn = false;
   String selectedPeriod = 'Month';
-  String userName = 'User'; // Ganti dengan nama user yang sebenarnya
+  // Variabel untuk user dan weather
+  String userName = 'Loading...';
+  String userEmail = '';
+  String currentCity = 'Batam';
+  String weatherDescription = 'Cerah';
+  double temperature = 28.0;
+  bool isLoadingWeather = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+    _loadWeatherData();
+  }
+
+  // 3. Method untuk load data user
+  void _loadUserData() {
+    final user = _auth.currentUser;
+    if (user != null) {
+      setState(() {
+        userName = user.displayName ?? 'User';
+        userEmail = user.email ?? 'user@email.com';
+      });
+    }
+  }
+
+  void _loadWeatherData() async {
+    try {
+      // Coba dapatkan lokasi saat ini
+      final position = await WeatherService.getCurrentPosition();
+
+      Map<String, dynamic> weatherData;
+
+      if (position != null) {
+        // Jika berhasil dapat lokasi, gunakan koordinat
+        weatherData = await WeatherService.getWeatherByCoordinates(
+          position.latitude,
+          position.longitude,
+        );
+      } else {
+        // Jika gagal, gunakan default Batam
+        weatherData = await WeatherService.getWeatherByCity('Batam');
+      }
+
+      setState(() {
+        currentCity = weatherData['city'] ?? 'Batam';
+        temperature = weatherData['temperature'] ?? 28.0;
+        weatherDescription = weatherData['description'] ?? 'Cerah';
+        isLoadingWeather = false;
+      });
+    } catch (e) {
+      // Jika ada error, gunakan data default
+      setState(() {
+        currentCity = 'Batam';
+        temperature = 28.0;
+        weatherDescription = 'Cerah';
+        isLoadingWeather = false;
+      });
+    }
+  }
 
   void _showLogoutConfirmationDialog() {
     showDialog(
@@ -129,7 +189,7 @@ class _HomePageState extends State<HomePage> {
                       radius: 25,
                       backgroundColor: Colors.white,
                       child: Text(
-                        'U',
+                        userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
                         style: GoogleFonts.poppins(
                           fontSize: 24,
                           fontWeight: FontWeight.w600,
@@ -147,7 +207,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     Text(
-                      'user@email.com',
+                      userEmail,
                       style: GoogleFonts.poppins(
                         fontSize: 14,
                         color: Colors.white.withOpacity(0.9),
@@ -331,7 +391,7 @@ class _HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Welcome, User',
+                    'Welcome, $userName',
                     style: GoogleFonts.poppins(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
@@ -356,7 +416,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        'Batam, Kepulauan Riau',
+                        '$currentCity, Kepulauan Riau',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           color: Colors.grey.shade600,
@@ -371,7 +431,9 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        '28°C, Berawan',
+                        isLoadingWeather
+                            ? 'Loading...'
+                            : '${temperature.toInt()}°C, $weatherDescription',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           color: Colors.grey.shade600,

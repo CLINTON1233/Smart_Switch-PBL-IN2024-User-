@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:smart_switch/pages/auth/login_page.dart';
-import 'package:awesome_dialog/awesome_dialog.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:smart_switch/services/firestore_auth_services.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -18,8 +19,10 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController confirmPasswordController =
       TextEditingController();
 
+  final FirestoreService _firestoreService = FirestoreService();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -30,27 +33,141 @@ class _RegisterPageState extends State<RegisterPage> {
     super.dispose();
   }
 
-  void _showSuccessDialog() {
-    AwesomeDialog(
-      context: context,
-      dialogType: DialogType.success,
-      animType: AnimType.rightSlide,
-      title: 'Registrasi Berhasil',
-      desc: 'Akun berhasil dibuat. Silakan login dengan akun baru Anda.',
-      btnOkText: 'Login Sekarang',
-      btnOkOnPress: () {
+  // Show SnackBar dengan pesan
+  void _showSnackBar(String message, {bool isSuccess = false}) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
+        backgroundColor: isSuccess ? Colors.green[600] : Colors.red[600],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  // Validasi form input
+  bool _validateForm() {
+    final username = usernameController.text.trim();
+    final email = emailController.text.trim();
+    final password = passwordController.text.trim();
+    final confirmPassword = confirmPasswordController.text.trim();
+
+    if (username.isEmpty ||
+        email.isEmpty ||
+        password.isEmpty ||
+        confirmPassword.isEmpty) {
+      _showSnackBar("Semua field wajib diisi");
+      return false;
+    }
+
+    if (username.length < 3) {
+      _showSnackBar("Username minimal 3 karakter");
+      return false;
+    }
+
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
+      _showSnackBar("Format email tidak valid");
+      return false;
+    }
+
+    if (password.length < 6) {
+      _showSnackBar("Password minimal 6 karakter");
+      return false;
+    }
+
+    if (password != confirmPassword) {
+      _showSnackBar("Password tidak cocok");
+      return false;
+    }
+
+    return true;
+  }
+
+  // Fungsi registrasi user dengan Firebase
+  Future<void> _registerUser() async {
+    if (!_validateForm()) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    final username = usernameController.text.trim();
+    final email = emailController.text.trim();
+    final password = passwordController.text.trim();
+
+    try {
+      // Cek apakah username sudah digunakan
+      bool usernameExists = await _firestoreService.isUsernameExists(username);
+      if (usernameExists) {
+        _showSnackBar("Username sudah digunakan");
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Buat akun Firebase Auth
+      UserCredential userCredential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(email: email, password: password);
+
+      // Simpan data ke Firestore
+      await _firestoreService.saveUserData(
+        userId: userCredential.user!.uid,
+        username: username,
+        email: email,
+      );
+
+      // Update display name
+      await userCredential.user!.updateDisplayName(username);
+
+      // Tampilkan pesan sukses
+      _showSnackBar("Registrasi berhasil!", isSuccess: true);
+
+      // Navigasi ke halaman login
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const LoginPage()),
         );
-      },
-      btnOkColor: Colors.green,
-      dismissOnTouchOutside: false,
-      dismissOnBackKeyPress: false,
-    ).show();
+      }
+    } on FirebaseAuthException catch (e) {
+      String message = "Terjadi kesalahan";
+
+      switch (e.code) {
+        case 'email-already-in-use':
+          message = "Email sudah digunakan";
+          break;
+        case 'invalid-email':
+          message = "Email tidak valid";
+          break;
+        case 'weak-password':
+          message = "Password terlalu lemah";
+          break;
+        case 'operation-not-allowed':
+          message = "Operasi tidak diizinkan";
+          break;
+        default:
+          message = "Terjadi kesalahan: ${e.message}";
+      }
+
+      _showSnackBar(message);
+    } catch (e) {
+      _showSnackBar("Terjadi kesalahan: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   void _navigateToLogin() {
+    if (_isLoading) return;
+
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (context) => const LoginPage()),
@@ -70,6 +187,7 @@ class _RegisterPageState extends State<RegisterPage> {
       body: SafeArea(
         child: Stack(
           children: [
+            // Background decorations
             Positioned(
               top: 0,
               left: 0,
@@ -136,6 +254,8 @@ class _RegisterPageState extends State<RegisterPage> {
                 ),
               ),
             ),
+
+            // Main content
             SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(40, 125, 40, 300),
               child: Column(
@@ -155,14 +275,18 @@ class _RegisterPageState extends State<RegisterPage> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  _buildTextField(usernameController, Icons.person, 'Username'),
+                  _buildTextField(
+                    usernameController,
+                    Icons.person,
+                    'Username (min 3 karakter)',
+                  ),
                   const SizedBox(height: 10),
                   _buildTextField(emailController, Icons.email, 'Email'),
                   const SizedBox(height: 10),
                   _buildTextField(
                     passwordController,
                     Icons.lock,
-                    'Password',
+                    'Password (min 6 karakter)',
                     isPassword: true,
                     obscureText: _obscurePassword,
                     onToggle:
@@ -189,17 +313,32 @@ class _RegisterPageState extends State<RegisterPage> {
                     width: double.infinity,
                     height: 45,
                     child: ElevatedButton(
-                      onPressed: _showSuccessDialog,
+                      onPressed: _isLoading ? null : _registerUser,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.teal,
+                        backgroundColor: _isLoading ? Colors.grey : Colors.teal,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
                         ),
                       ),
-                      child: const Text(
-                        'Regist Now',
-                        style: TextStyle(fontSize: 16, color: Colors.white),
-                      ),
+                      child:
+                          _isLoading
+                              ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                              : const Text(
+                                'Regist Now',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.white,
+                                ),
+                              ),
                     ),
                   ),
                   const SizedBox(height: 5),
@@ -210,10 +349,10 @@ class _RegisterPageState extends State<RegisterPage> {
                       const SizedBox(width: 5),
                       GestureDetector(
                         onTap: _navigateToLogin,
-                        child: const Text(
+                        child: Text(
                           'Login',
                           style: TextStyle(
-                            color: Colors.teal,
+                            color: _isLoading ? Colors.grey : Colors.teal,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -223,6 +362,17 @@ class _RegisterPageState extends State<RegisterPage> {
                 ],
               ),
             ),
+
+            // Loading overlay
+            if (_isLoading)
+              Container(
+                color: Colors.black.withOpacity(0.3),
+                child: const Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.teal),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -241,7 +391,12 @@ class _RegisterPageState extends State<RegisterPage> {
       height: 45,
       child: TextField(
         controller: controller,
+        enabled: !_isLoading,
         obscureText: obscureText ?? false,
+        keyboardType:
+            hintText.toLowerCase().contains('email')
+                ? TextInputType.emailAddress
+                : TextInputType.text,
         decoration: InputDecoration(
           prefixIcon: Icon(icon, size: 20),
           hintText: hintText,
@@ -251,7 +406,7 @@ class _RegisterPageState extends State<RegisterPage> {
             horizontal: 5,
           ),
           filled: true,
-          fillColor: Colors.teal.shade50,
+          fillColor: _isLoading ? Colors.grey[200] : Colors.teal.shade50,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
             borderSide: BorderSide.none,
@@ -265,7 +420,7 @@ class _RegisterPageState extends State<RegisterPage> {
                           : Icons.visibility,
                       size: 20,
                     ),
-                    onPressed: onToggle,
+                    onPressed: _isLoading ? null : onToggle,
                   )
                   : null,
         ),
