@@ -439,119 +439,118 @@ class _HomePageState extends State<HomePage> {
                           color: Colors.grey.shade600,
                           fontWeight: FontWeight.w400,
                         ),
+                      
                       ),
+                    
                     ],
                   ),
                 ],
               ),
+               const SizedBox(height: 10),
+                 Text(
+                        isSwitchOn ? 'Saklar Aktif' : 'Saklar Tidak Aktif',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color:
+                              isSwitchOn ? Colors.green : Colors.grey.shade600,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
 
-              const SizedBox(height: 25),
+              const SizedBox(height: 18),
 
               // Statistics Cards
               Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            const Color.fromARGB(255, 222, 170, 72),
-                            const Color.fromARGB(255, 219, 186, 124),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+              Expanded(
+                child: Container(
+                  height: 160, // Tambahkan tinggi card
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color.fromARGB(255, 222, 170, 72),
+                        const Color.fromARGB(255, 219, 186, 124),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Judul + Icon panah
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Power Usage',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white.withOpacity(0.8),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              Icon(
-                                Icons.arrow_downward,
-                                color: Colors.white.withOpacity(0.8),
-                                size: 16,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
                           Text(
-                            '12 kWh',
+                            'Power Usage',
                             style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
+                              color: Colors.white.withOpacity(0.8),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
                             ),
+                          ),
+                          Icon(
+                            Icons.arrow_downward,
+                            color: Colors.white.withOpacity(0.8),
+                            size: 16,
                           ),
                         ],
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            const Color(0xFF34D399), // Hijau medium
-                            const Color(0xFF10B981),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                      const SizedBox(height: 8),
+
+                      // Jumlah kWh
+                      Text(
+                        '12 kWh',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
                         ),
-                        borderRadius: BorderRadius.circular(18),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      const Spacer(),
+                      // Tambahan ikon
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
+                              Icon(Icons.electric_bolt, color: Colors.white, size: 18),
+                              const SizedBox(width: 4),
                               Text(
-                                'Efficiency',
+                                'Normal',
                                 style: GoogleFonts.poppins(
-                                  color: Colors.white.withOpacity(0.8),
+                                  color: Colors.white.withOpacity(0.9),
                                   fontSize: 12,
-                                  fontWeight: FontWeight.w500,
                                 ),
-                              ),
-                              Icon(
-                                Icons.trending_up,
-                                color: Colors.white.withOpacity(0.8),
-                                size: 16,
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '50%',
-                            style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          Row(
+                            children: [
+                              Icon(Icons.battery_charging_full,
+                                  color: Colors.white, size: 18),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Charged',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white.withOpacity(0.9),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
-
+              ],
+              ),
               const SizedBox(height: 25),
-
               // Control Switch Section
               Container(
                 width: double.infinity,
@@ -694,7 +693,7 @@ class _HomePageState extends State<HomePage> {
 
                     // Total biaya
                     Text(
-                      'Rp 15.000',
+                      'Rp 15.000 kWh',
                       style: GoogleFonts.poppins(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
