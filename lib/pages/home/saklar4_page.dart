@@ -424,7 +424,7 @@ class _Saklar4PageState extends State<Saklar4Page> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        isSwitchOn ? 'Aktif' : 'Tidak Aktif',
+                      isSwitchOn ? 'Saklar Aktif' : 'Saklar Tidak Aktif',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           color:
@@ -437,111 +437,99 @@ class _Saklar4PageState extends State<Saklar4Page> {
                 ],
               ),
 
-              const SizedBox(height: 25),
+              const SizedBox(height: 20),
 
               // Statistics Cards - disesuaikan untuk saklar 4
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            const Color.fromARGB(255, 222, 170, 72),
-                            const Color.fromARGB(255, 219, 186, 124),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                 Row(
+              children: [
+              Expanded(
+                child: Container(
+                  height: 160, // Tambahkan tinggi card
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color.fromARGB(255, 222, 170, 72),
+                        const Color.fromARGB(255, 219, 186, 124),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Judul + Icon panah
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Power Usage',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white.withOpacity(0.8),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              Icon(
-                                Icons.flash_on,
-                                color: Colors.white.withOpacity(0.8),
-                                size: 16,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
                           Text(
-                            '20 kWh',
+                            'Power Usage',
                             style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
+                              color: Colors.white.withOpacity(0.8),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
                             ),
+                          ),
+                          Icon(
+                            Icons.arrow_downward,
+                            color: Colors.white.withOpacity(0.8),
+                            size: 16,
                           ),
                         ],
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            const Color(0xFF34D399), // Hijau medium
-                            const Color(0xFF10B981),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Cost',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white.withOpacity(0.8),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              Icon(
-                                Icons.attach_money,
-                                color: Colors.white.withOpacity(0.8),
-                                size: 16,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Rp 25K',
-                            style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                      const SizedBox(height: 8),
 
+                      // Jumlah kWh
+                      Text(
+                        '12 kWh',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Spacer(),
+                      // Tambahan ikon
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.electric_bolt, color: Colors.white, size: 18),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Normal',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white.withOpacity(0.9),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              Icon(Icons.battery_charging_full,
+                                  color: Colors.white, size: 18),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Charged',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white.withOpacity(0.9),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              ],
+              ),
               const SizedBox(height: 25),
 
               // Control Switch Section
@@ -761,53 +749,53 @@ class _Saklar4PageState extends State<Saklar4Page> {
 
                     const SizedBox(height: 12),
 
-                    // Efficiency Info
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8F9FA),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFABD3CC).withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(
-                              Icons.trending_up,
-                              color: const Color(0xFF6BB5A6),
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Efisiensi penggunaan daya',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                                Text(
-                                  '40%',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                                       // Efficiency Info
+                   Container(
+  padding: const EdgeInsets.all(16),
+  decoration: BoxDecoration(
+    color: const Color(0xFFF8F9FA),
+    borderRadius: BorderRadius.circular(12),
+  ),
+  child: Row(
+    children: [
+      Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFABD3CC).withOpacity(0.2),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          Icons.bolt,
+          color: const Color(0xFF6BB5A6),
+          size: 20,
+        ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Energi digunakan hari ini',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            Text(
+              '5.2 kWh',
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  ),
+),
                   ],
                 ),
               ),
