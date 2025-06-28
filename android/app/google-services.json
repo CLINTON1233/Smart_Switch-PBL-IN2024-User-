@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "267223687057",
-    "project_id": "smart-switch-pblin2024",
-    "storage_bucket": "smart-switch-pblin2024.firebasestorage.app"
+    "project_number": "145953908614",
+    "project_id": "smart-switch-pbl-in2024-db81c",
+    "storage_bucket": "smart-switch-pbl-in2024-db81c.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:267223687057:android:ce141009941456f5f58430",
+        "mobilesdk_app_id": "1:145953908614:android:59536808bdcd0c9da92e07",
         "android_client_info": {
           "package_name": "com.example.smart_switch"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyD-V8vjhdCFMOo6_rEuVg8UEYiVv0qFWfk"
+          "current_key": "AIzaSyD15JQa9cvOrwY0K9_FRjWk3es4i38WExg"
         }
       ],
       "services": {
