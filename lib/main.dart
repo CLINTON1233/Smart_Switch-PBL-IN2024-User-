@@ -16,10 +16,9 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Smart Switch',
+      title: 'Smart Switch User',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(primarySwatch: Colors.teal),
-      home: const SplashScreen(), // atau halaman awalmu
+      home: SplashScreen(),
     );
   }
 }

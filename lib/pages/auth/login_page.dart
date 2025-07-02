@@ -16,7 +16,7 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final FirestoreService _firestoreService = FirestoreService();
+  final FirestoreAuthService _authService = FirestoreAuthService();
 
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -83,7 +83,7 @@ class _LoginPageState extends State<LoginPage> {
           .signInWithEmailAndPassword(email: email, password: password);
 
       // Ambil data user dari Firestore
-      Map<String, dynamic>? userData = await _firestoreService.getUserData(
+      Map<String, dynamic>? userData = await _authService.getUserData(
         userCredential.user!.uid,
       );
 
@@ -103,7 +103,7 @@ class _LoginPageState extends State<LoginPage> {
           );
         }
       } else {
-        // Jika data user tidak ditemukan di Firestore
+        // Jika data user tidak ditemukan di auth
         _showSnackBar("Data user tidak ditemukan");
         await FirebaseAuth.instance.signOut(); // Logout jika data tidak ada
       }

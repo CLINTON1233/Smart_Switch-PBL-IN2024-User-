@@ -25,7 +25,7 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _isLoading = false;
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirestoreService _firestoreService = FirestoreService();
+  final FirestoreAuthService _firestoreService = FirestoreAuthService();
 
   int _selectedIndex = 2;
 

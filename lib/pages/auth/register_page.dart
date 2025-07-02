@@ -18,8 +18,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController passwordController = TextEditingController();
   final TextEditingController confirmPasswordController =
       TextEditingController();
-
-  final FirestoreService _firestoreService = FirestoreService();
+  final FirestoreAuthService _authService = FirestoreAuthService();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
@@ -86,6 +85,7 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   // Fungsi registrasi user dengan Firebase
+  // Fungsi registrasi user dengan Firebase (SIMPLIFIED VERSION)
   Future<void> _registerUser() async {
     if (!_validateForm()) return;
 
@@ -98,22 +98,12 @@ class _RegisterPageState extends State<RegisterPage> {
     final password = passwordController.text.trim();
 
     try {
-      // Cek apakah username sudah digunakan
-      bool usernameExists = await _firestoreService.isUsernameExists(username);
-      if (usernameExists) {
-        _showSnackBar("Username sudah digunakan");
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
-
-      // Buat akun Firebase Auth
+      // Langsung buat akun Firebase Auth tanpa cek username dulu
       UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(email: email, password: password);
 
       // Simpan data ke Firestore
-      await _firestoreService.saveUserData(
+      await _authService.saveUserData(
         userId: userCredential.user!.uid,
         username: username,
         email: email,
