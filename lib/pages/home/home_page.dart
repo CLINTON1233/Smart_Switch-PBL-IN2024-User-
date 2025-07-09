@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:smart_switch/pages/auth/login_page.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:smart_switch/pages/education/education_page.dart';
 import 'package:flutter/services.dart';
-import 'package:smart_switch/pages/home/saklar2_page.dart';
-import 'package:smart_switch/pages/home/saklar3_page.dart';
-import 'package:smart_switch/pages/home/saklar4_page.dart';
-import 'package:smart_switch/pages/profile/profile_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:smart_switch/services/weather_services.dart';
+import 'package:mqtt_client/mqtt_client.dart';
+import 'package:mqtt_client/mqtt_server_client.dart';
+import 'dart:convert';
+
+import 'package:smart_switch/pages/auth/login_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -24,7 +22,8 @@ class _HomePageState extends State<HomePage> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool isSwitchOn = false;
   String selectedPeriod = 'Month';
-  // Variabel untuk user dan weather
+
+  // Variabel user dan weather
   String userName = 'Loading...';
   String userEmail = '';
   String currentCity = 'Batam';
@@ -32,14 +31,128 @@ class _HomePageState extends State<HomePage> {
   double temperature = 28.0;
   bool isLoadingWeather = true;
 
+  // Variabel MQTT
+  late MqttServerClient client;
+  bool isMqttConnected = false;
+
+  // Variabel sensor
+  double currentVoltage = 0.0;
+  double currentCurrent = 0.0;
+  double currentPower = 0.0;
+  double currentEnergy = 0.0;
+  double currentFrequency = 0.0;
+  double currentPf = 0.0;
+
   @override
   void initState() {
     super.initState();
     _loadUserData();
     _loadWeatherData();
+    _setupMqtt();
   }
 
-  // 3. Method untuk load data user
+  Future<void> _setupMqtt() async {
+    client = MqttServerClient(
+      'broker.hivemq.com',
+      'flutter_client_${DateTime.now().millisecondsSinceEpoch}',
+    );
+    client.logging(on: false);
+    client.onConnected = _onMqttConnected;
+    client.onDisconnected = _onMqttDisconnected;
+
+    final connMessage = MqttConnectMessage()
+        .withClientIdentifier('flutter_client')
+        .startClean()
+        .withWillQos(MqttQos.atLeastOnce);
+
+    client.connectionMessage = connMessage;
+
+    try {
+      await client.connect();
+    } catch (e) {
+      print('MQTT Connection Exception: $e');
+      _reconnectMqtt();
+    }
+
+    if (client.connectionStatus?.state == MqttConnectionState.connected) {
+      _onMqttConnected();
+    }
+  }
+
+  void _onMqttConnected() {
+    print('MQTT Connected');
+    setState(() {
+      isMqttConnected = true;
+    });
+
+    // Subscribe ke topic
+    client.subscribe('smart_switch/status', MqttQos.atLeastOnce);
+    client.subscribe('smart_switch/pzem', MqttQos.atLeastOnce);
+
+    client.updates?.listen((List<MqttReceivedMessage<MqttMessage>> c) {
+      final recMess = c[0].payload as MqttPublishMessage;
+      final payload = MqttPublishPayload.bytesToStringAsString(
+        recMess.payload.message,
+      );
+      final topic = c[0].topic;
+
+      print('Received message: $topic - $payload');
+
+      if (topic == 'smart_switch/status') {
+        setState(() {
+          isSwitchOn = payload == 'ON';
+        });
+      } else if (topic == 'smart_switch/pzem') {
+        try {
+          final data = json.decode(payload);
+          setState(() {
+            currentVoltage = data['voltage']?.toDouble() ?? 0.0;
+            currentCurrent = data['current']?.toDouble() ?? 0.0;
+            currentPower = data['power']?.toDouble() ?? 0.0;
+            currentEnergy = data['energy']?.toDouble() ?? 0.0;
+            currentFrequency = data['frequency']?.toDouble() ?? 0.0;
+            currentPf = data['pf']?.toDouble() ?? 0.0;
+          });
+        } catch (e) {
+          print('Error parsing PZEM data: $e');
+        }
+      }
+    });
+  }
+
+  void _onMqttDisconnected() {
+    print('MQTT Disconnected');
+    setState(() {
+      isMqttConnected = false;
+    });
+    _reconnectMqtt();
+  }
+
+  void _reconnectMqtt() {
+    Future.delayed(const Duration(seconds: 5), () {
+      if (!isMqttConnected) {
+        print('Attempting MQTT reconnection...');
+        _setupMqtt();
+      }
+    });
+  }
+
+  void _toggleSwitch(bool newValue) {
+    setState(() {
+      isSwitchOn = newValue;
+    });
+
+    if (isMqttConnected) {
+      final builder = MqttClientPayloadBuilder();
+      builder.addString(newValue ? 'ON' : 'OFF');
+      client.publishMessage(
+        'smart_switch/control',
+        MqttQos.atLeastOnce,
+        builder.payload!,
+      );
+    }
+  }
+
   void _loadUserData() {
     final user = _auth.currentUser;
     if (user != null) {
@@ -52,34 +165,16 @@ class _HomePageState extends State<HomePage> {
 
   void _loadWeatherData() async {
     try {
-      // Coba dapatkan lokasi saat ini
-      final position = await WeatherService.getCurrentPosition();
-
-      Map<String, dynamic> weatherData;
-
-      if (position != null) {
-        // Jika berhasil dapat lokasi, gunakan koordinat
-        weatherData = await WeatherService.getWeatherByCoordinates(
-          position.latitude,
-          position.longitude,
-        );
-      } else {
-        // Jika gagal, gunakan default Batam
-        weatherData = await WeatherService.getWeatherByCity('Batam');
-      }
-
-      setState(() {
-        currentCity = weatherData['city'] ?? 'Batam';
-        temperature = weatherData['temperature'] ?? 28.0;
-        weatherDescription = weatherData['description'] ?? 'Cerah';
-        isLoadingWeather = false;
-      });
-    } catch (e) {
-      // Jika ada error, gunakan data default
+      // Simulasi data cuaca
+      await Future.delayed(const Duration(seconds: 2));
       setState(() {
         currentCity = 'Batam';
         temperature = 28.0;
         weatherDescription = 'Cerah';
+        isLoadingWeather = false;
+      });
+    } catch (e) {
+      setState(() {
         isLoadingWeather = false;
       });
     }
@@ -139,213 +234,12 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _selectedIndex = index;
     });
-
-    if (index == 0) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomePage()),
-      );
-    } else if (index == 1) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const EducationPage()),
-      );
-    } else if (index == 2) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const ProfilePage()),
-      );
-    }
   }
 
-  // Build Drawer Menu
-  Widget _buildDrawer() {
-    return Drawer(
-      backgroundColor: Colors.white,
-      child: Column(
-        children: [
-          // Drawer Header
-          Container(
-            height: 200,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  const Color.fromARGB(255, 13, 138, 117),
-                  const Color.fromARGB(255, 24, 142, 122),
-                ],
-              ),
-            ),
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    CircleAvatar(
-                      radius: 25,
-                      backgroundColor: Colors.white,
-                      child: Text(
-                        userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
-                        style: GoogleFonts.poppins(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF6BB5A6),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      userName,
-                      style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                    Text(
-                      userEmail,
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: Colors.white.withOpacity(0.9),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Menu Items
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                _buildDrawerItem(
-                  icon: Icons.home_outlined,
-                  title: 'Home',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => const HomePage()),
-                    );
-                  },
-                  isActive: true,
-                ),
-                _buildDrawerItem(
-                  icon: Icons.power_settings_new,
-                  title: 'Control Saklar 2',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const Saklar2Page(),
-                      ),
-                    );
-                  },
-                ),
-                _buildDrawerItem(
-                  icon: Icons.power_settings_new,
-                  title: 'Control Saklar 3',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const Saklar3Page(),
-                      ),
-                    );
-                  },
-                ),
-                _buildDrawerItem(
-                  icon: Icons.power_settings_new,
-                  title: 'Control Saklar 4',
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const Saklar4Page(),
-                      ),
-                    );
-                  },
-                ),
-                _buildDrawerItem(
-                  icon: Icons.logout,
-                  title: 'Logout',
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showLogoutConfirmationDialog();
-                  },
-                  isLogout: true,
-                ),
-              ],
-            ),
-          ),
-
-          // App Version
-          Container(
-            padding: const EdgeInsets.all(30),
-            child: Text(
-              'Version 1.0.0',
-              style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[400]),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Build Drawer Item
-  Widget _buildDrawerItem({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-    bool isActive = false,
-    bool isLogout = false,
-  }) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color:
-            isActive
-                ? const Color(0xFFABD3CC).withOpacity(0.1)
-                : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: ListTile(
-        leading: Icon(
-          icon,
-          color:
-              isLogout
-                  ? Colors.red
-                  : isActive
-                  ? const Color(0xFF6BB5A6)
-                  : Colors.grey[600],
-          size: 24,
-        ),
-        title: Text(
-          title,
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-            color:
-                isLogout
-                    ? Colors.red
-                    : isActive
-                    ? const Color(0xFF6BB5A6)
-                    : Colors.black87,
-          ),
-        ),
-        onTap: onTap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+  @override
+  void dispose() {
+    client.disconnect();
+    super.dispose();
   }
 
   @override
@@ -360,14 +254,13 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: const Color(0xFFF8F9FA),
-      drawer: _buildDrawer(), // Tambahkan drawer
       appBar: AppBar(
         backgroundColor: const Color.fromARGB(255, 13, 138, 117),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.menu, color: Colors.white),
           onPressed: () {
-            _scaffoldKey.currentState?.openDrawer(); // Buka drawer
+            _scaffoldKey.currentState?.openDrawer();
           },
         ),
         title: Text(
@@ -379,6 +272,19 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: Icon(
+              isMqttConnected ? Icons.cloud_done : Icons.cloud_off,
+              color: Colors.white,
+            ),
+            onPressed: () {
+              if (!isMqttConnected) {
+                _setupMqtt();
+              }
+            },
+          ),
+        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -439,118 +345,118 @@ class _HomePageState extends State<HomePage> {
                           color: Colors.grey.shade600,
                           fontWeight: FontWeight.w400,
                         ),
-                      
                       ),
-                    
                     ],
                   ),
                 ],
               ),
-               const SizedBox(height: 10),
-                 Text(
-                        isSwitchOn ? 'Saklar Aktif' : 'Saklar Tidak Aktif',
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color:
-                              isSwitchOn ? Colors.green : Colors.grey.shade600,
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-
+              const SizedBox(height: 10),
+              Text(
+                isSwitchOn ? 'Saklar Aktif' : 'Saklar Tidak Aktif',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: isSwitchOn ? Colors.green : Colors.grey.shade600,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
               const SizedBox(height: 18),
 
               // Statistics Cards
               Row(
-              children: [
-              Expanded(
-                child: Container(
-                  height: 160, // Tambahkan tinggi card
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        const Color.fromARGB(255, 222, 170, 72),
-                        const Color.fromARGB(255, 219, 186, 124),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Judul + Icon panah
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Container(
+                      height: 160,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            const Color.fromARGB(255, 222, 170, 72),
+                            const Color.fromARGB(255, 219, 186, 124),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Power Usage',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white.withOpacity(0.8),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_downward,
+                                color: Colors.white.withOpacity(0.8),
+                                size: 16,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
                           Text(
-                            'Power Usage',
+                            '${currentPower.toStringAsFixed(1)} W',
                             style: GoogleFonts.poppins(
-                              color: Colors.white.withOpacity(0.8),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                          Icon(
-                            Icons.arrow_downward,
-                            color: Colors.white.withOpacity(0.8),
-                            size: 16,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-
-                      // Jumlah kWh
-                      Text(
-                        '12 kWh',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const Spacer(),
-                      // Tambahan ikon
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
+                          const Spacer(),
                           Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Icon(Icons.electric_bolt, color: Colors.white, size: 18),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Normal',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white.withOpacity(0.9),
-                                  fontSize: 12,
-                                ),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.electric_bolt,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${currentVoltage.toStringAsFixed(1)} V',
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white.withOpacity(0.9),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          Row(
-                            children: [
-                              Icon(Icons.battery_charging_full,
-                                  color: Colors.white, size: 18),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Charged',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white.withOpacity(0.9),
-                                  fontSize: 12,
-                                ),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.battery_charging_full,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${(currentCurrent * 1000).toStringAsFixed(0)} mA',
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white.withOpacity(0.9),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-              ],
+                ],
               ),
               const SizedBox(height: 25),
+
               // Control Switch Section
               Container(
                 width: double.infinity,
@@ -579,9 +485,7 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(height: 16),
                     GestureDetector(
                       onTap: () {
-                        setState(() {
-                          isSwitchOn = !isSwitchOn;
-                        });
+                        _toggleSwitch(!isSwitchOn);
                       },
                       child: Container(
                         width: 70,
@@ -647,7 +551,6 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Header dengan live indicator
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -665,24 +568,26 @@ class _HomePageState extends State<HomePage> {
                               width: 8,
                               height: 8,
                               decoration: BoxDecoration(
-                                color: const Color.fromARGB(255, 24, 213, 141),
+                                color:
+                                    isMqttConnected
+                                        ? const Color.fromARGB(
+                                          255,
+                                          24,
+                                          213,
+                                          141,
+                                        )
+                                        : Colors.grey,
                                 shape: BoxShape.circle,
                               ),
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              'Live',
+                              isMqttConnected ? 'Live' : 'Offline',
                               style: GoogleFonts.poppins(
                                 fontSize: 12,
                                 color: Colors.grey.shade600,
                                 fontWeight: FontWeight.w500,
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Icon(
-                              Icons.more_horiz,
-                              color: Colors.grey.shade600,
-                              size: 18,
                             ),
                           ],
                         ),
@@ -691,9 +596,8 @@ class _HomePageState extends State<HomePage> {
 
                     const SizedBox(height: 12),
 
-                    // Total biaya
                     Text(
-                      'Rp 15.000 kWh',
+                      'Rp ${(currentEnergy * 1500).toStringAsFixed(0)}',
                       style: GoogleFonts.poppins(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -703,7 +607,6 @@ class _HomePageState extends State<HomePage> {
 
                     const SizedBox(height: 20),
 
-                    // Area Chart dengan data biaya
                     SizedBox(
                       height: 200,
                       child: LineChart(
@@ -756,7 +659,7 @@ class _HomePageState extends State<HomePage> {
                                       ),
                                     );
                                   }
-                                  return Text('');
+                                  return const Text('');
                                 },
                               ),
                             ),
@@ -832,51 +735,6 @@ class _HomePageState extends State<HomePage> {
                               ),
                             ),
                           ],
-                          lineTouchData: LineTouchData(
-                            enabled: true,
-                            touchTooltipData: LineTouchTooltipData(
-                              getTooltipColor: (touchedSpot) => Colors.black87,
-                              tooltipRoundedRadius: 8,
-                              getTooltipItems: (touchedSpots) {
-                                return touchedSpots.map((spot) {
-                                  return LineTooltipItem(
-                                    'Rp ${spot.y.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (Match m) => '${m[1]}.')}',
-                                    GoogleFonts.poppins(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                  );
-                                }).toList();
-                              },
-                            ),
-                            handleBuiltInTouches: true,
-                            getTouchedSpotIndicator: (barData, spotIndexes) {
-                              return spotIndexes.map((spotIndex) {
-                                return TouchedSpotIndicatorData(
-                                  FlLine(
-                                    color: const Color(0xFFFF6B6B),
-                                    strokeWidth: 2,
-                                  ),
-                                  FlDotData(
-                                    getDotPainter: (
-                                      spot,
-                                      percent,
-                                      barData,
-                                      index,
-                                    ) {
-                                      return FlDotCirclePainter(
-                                        radius: 6,
-                                        color: Colors.white,
-                                        strokeWidth: 3,
-                                        strokeColor: const Color(0xFFFF6B6B),
-                                      );
-                                    },
-                                  ),
-                                );
-                              }).toList();
-                            },
-                          ),
                         ),
                       ),
                     ),
@@ -893,27 +751,20 @@ class _HomePageState extends State<HomePage> {
         type: BottomNavigationBarType.fixed,
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
-        backgroundColor: Colors.white, // Ubah dari Color(0xFFD2E3DC) ke putih
-        selectedItemColor: const Color(
-          0xFF6BB5A6,
-        ), // Warna hijau untuk item terpilih
-        unselectedItemColor:
-            Colors.grey[600], // Warna abu untuk item tidak terpilih
-        selectedIconTheme: const IconThemeData(
-          size: 24,
-        ), // Kurangi dari 30 ke 24
-        unselectedIconTheme: const IconThemeData(
-          size: 22,
-        ), // Kurangi dari 28 ke 22
+        backgroundColor: Colors.white,
+        selectedItemColor: const Color(0xFF6BB5A6),
+        unselectedItemColor: Colors.grey[600],
+        selectedIconTheme: const IconThemeData(size: 24),
+        unselectedIconTheme: const IconThemeData(size: 22),
         selectedLabelStyle: GoogleFonts.poppins(
           fontSize: 11,
           fontWeight: FontWeight.w600,
-          color: const Color(0xFF6BB5A6), // Sesuaikan warna text dengan icon
+          color: const Color(0xFF6BB5A6),
         ),
         unselectedLabelStyle: GoogleFonts.poppins(
           fontSize: 10,
           fontWeight: FontWeight.w500,
-          color: Colors.grey[600], // Sesuaikan warna text dengan icon
+          color: Colors.grey[600],
         ),
         items: const [
           BottomNavigationBarItem(
@@ -933,20 +784,6 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-    );
-  }
-
-  BarChartGroupData makeGroupData(int x, double y, Color color) {
-    return BarChartGroupData(
-      x: x,
-      barRods: [
-        BarChartRodData(
-          toY: y,
-          color: color,
-          width: 12,
-          borderRadius: BorderRadius.circular(6),
-        ),
-      ],
     );
   }
 }
