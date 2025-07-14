@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:mqtt_client/mqtt_client.dart';
-import 'package:mqtt_client/mqtt_server_client.dart';
-import 'dart:convert';
-
+import 'dart:async';
 import 'package:smart_switch/pages/auth/login_page.dart';
+import 'package:smart_switch/pages/education/education_page.dart';
+import 'package:smart_switch/pages/home/saklar2_page.dart';
+import 'package:smart_switch/pages/home/saklar3_page.dart';
+import 'package:smart_switch/pages/home/saklar4_page.dart';
+import 'package:smart_switch/pages/profile/profile_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -31,9 +34,14 @@ class _HomePageState extends State<HomePage> {
   double temperature = 28.0;
   bool isLoadingWeather = true;
 
-  // Variabel MQTT
-  late MqttServerClient client;
-  bool isMqttConnected = false;
+  // Firebase Database references
+  late DatabaseReference _databaseRef;
+  late DatabaseReference _sensorRef;
+  late DatabaseReference _controlRef;
+  late StreamSubscription<DatabaseEvent> _sensorSubscription;
+  late StreamSubscription<DatabaseEvent> _controlSubscription;
+  bool isFirebaseConnected = false;
+  DateTime? lastDataUpdate;
 
   // Variabel sensor
   double currentVoltage = 0.0;
@@ -42,115 +50,215 @@ class _HomePageState extends State<HomePage> {
   double currentEnergy = 0.0;
   double currentFrequency = 0.0;
   double currentPf = 0.0;
+  int wifiRssi = 0;
+  String lastUpdateTime = '';
+
+  // Chart data
+  List<FlSpot> powerSpots = [];
+  List<String> timeLabels = [];
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
     _loadWeatherData();
-    _setupMqtt();
+    _initializeFirebase();
   }
 
-  Future<void> _setupMqtt() async {
-    client = MqttServerClient(
-      'broker.hivemq.com',
-      'flutter_client_${DateTime.now().millisecondsSinceEpoch}',
-    );
-    client.logging(on: false);
-    client.onConnected = _onMqttConnected;
-    client.onDisconnected = _onMqttDisconnected;
-
-    final connMessage = MqttConnectMessage()
-        .withClientIdentifier('flutter_client')
-        .startClean()
-        .withWillQos(MqttQos.atLeastOnce);
-
-    client.connectionMessage = connMessage;
-
+  // 1. Update initializeFirebase method
+  Future<void> _initializeFirebase() async {
     try {
-      await client.connect();
+      _databaseRef = FirebaseDatabase.instance.ref();
+
+      // Sesuaikan dengan struktur Firebase Anda
+      _sensorRef = FirebaseDatabase.instance.ref(); // Root reference
+      _controlRef = FirebaseDatabase.instance.ref();
+
+      _setupFirebaseListeners();
+
+      setState(() {
+        isFirebaseConnected = true;
+      });
+      print('Firebase initialized successfully');
     } catch (e) {
-      print('MQTT Connection Exception: $e');
-      _reconnectMqtt();
-    }
-
-    if (client.connectionStatus?.state == MqttConnectionState.connected) {
-      _onMqttConnected();
+      print('Error initializing Firebase: $e');
+      setState(() {
+        isFirebaseConnected = false;
+      });
+      Future.delayed(const Duration(seconds: 5), _initializeFirebase);
     }
   }
 
-  void _onMqttConnected() {
-    print('MQTT Connected');
-    setState(() {
-      isMqttConnected = true;
-    });
+  void _setupFirebaseListeners() {
+    // Listen to sensor data - sesuai struktur Firebase Anda
+    _sensorSubscription = _sensorRef
+        .child('sensor')
+        .onValue
+        .listen(
+          (DatabaseEvent event) {
+            print('Sensor data received: ${event.snapshot.value}');
+            final data = event.snapshot.value as Map<dynamic, dynamic>?;
+            if (data != null) {
+              _handleSensorData(data);
+            }
+          },
+          onError: (error) {
+            print('Error listening to sensor data: $error');
+            setState(() {
+              isFirebaseConnected = false;
+            });
+          },
+        );
 
-    // Subscribe ke topic
-    client.subscribe('smart_switch/status', MqttQos.atLeastOnce);
-    client.subscribe('smart_switch/pzem', MqttQos.atLeastOnce);
+    // Listen to relay control data
+    _controlSubscription = _controlRef
+        .child('relay')
+        .onValue
+        .listen(
+          (DatabaseEvent event) {
+            print('Relay data received: ${event.snapshot.value}');
+            final data = event.snapshot.value as Map<dynamic, dynamic>?;
+            if (data != null) {
+              _handleControlData(data);
+            }
+          },
+          onError: (error) {
+            print('Error listening to relay data: $error');
+          },
+        );
 
-    client.updates?.listen((List<MqttReceivedMessage<MqttMessage>> c) {
-      final recMess = c[0].payload as MqttPublishMessage;
-      final payload = MqttPublishPayload.bytesToStringAsString(
-        recMess.payload.message,
-      );
-      final topic = c[0].topic;
+    // Listen to relayStatus (alternatif path)
+    _controlRef
+        .child('relayStatus')
+        .onValue
+        .listen(
+          (DatabaseEvent event) {
+            print('RelayStatus data received: ${event.snapshot.value}');
+            final status = event.snapshot.value?.toString();
+            if (status != null) {
+              setState(() {
+                isSwitchOn = status == 'ON';
+              });
+            }
+          },
+          onError: (error) {
+            print('Error listening to relayStatus: $error');
+          },
+        );
+  }
 
-      print('Received message: $topic - $payload');
+  // In your _handleSensorData method, update it to match your Firebase structure:
+  void _handleSensorData(Map<dynamic, dynamic> data) {
+    try {
+      print('Received sensor data: $data');
 
-      if (topic == 'smart_switch/status') {
+      // Parse PZEM data sesuai struktur Firebase
+      if (data['pzem'] != null) {
+        final pzemData = data['pzem'] as Map<dynamic, dynamic>;
         setState(() {
-          isSwitchOn = payload == 'ON';
+          currentVoltage = _parseDouble(pzemData['voltage']) ?? 0.0;
+          currentCurrent = _parseDouble(pzemData['current']) ?? 0.0;
+          currentPower = _parseDouble(pzemData['power']) ?? 0.0;
+          currentEnergy = _parseDouble(pzemData['energy']) ?? 0.0;
+          currentFrequency = _parseDouble(pzemData['frequency']) ?? 0.0;
+          currentPf = _parseDouble(pzemData['power_factor']) ?? 0.0;
         });
-      } else if (topic == 'smart_switch/pzem') {
-        try {
-          final data = json.decode(payload);
-          setState(() {
-            currentVoltage = data['voltage']?.toDouble() ?? 0.0;
-            currentCurrent = data['current']?.toDouble() ?? 0.0;
-            currentPower = data['power']?.toDouble() ?? 0.0;
-            currentEnergy = data['energy']?.toDouble() ?? 0.0;
-            currentFrequency = data['frequency']?.toDouble() ?? 0.0;
-            currentPf = data['pf']?.toDouble() ?? 0.0;
-          });
-        } catch (e) {
-          print('Error parsing PZEM data: $e');
-        }
       }
-    });
+
+      // Parse system data
+      if (data['system'] != null) {
+        final systemData = data['system'] as Map<dynamic, dynamic>;
+        setState(() {
+          wifiRssi = _parseInt(systemData['wifi_rssi']) ?? 0;
+          lastUpdateTime = systemData['timestamp']?.toString() ?? '';
+          isSwitchOn = systemData['relay_state']?.toString() == 'ON';
+        });
+      }
+
+      // Parse sensor IR value (jika diperlukan)
+      if (data['sensor'] != null) {
+        final sensorData = data['sensor'] as Map<dynamic, dynamic>;
+        // Tambahkan parsing untuk sensor IR jika diperlukan
+      }
+
+      _updateChartData();
+
+      setState(() {
+        isFirebaseConnected = true;
+        lastDataUpdate = DateTime.now();
+      });
+    } catch (e) {
+      print('Error parsing sensor data: $e');
+    }
   }
 
-  void _onMqttDisconnected() {
-    print('MQTT Disconnected');
-    setState(() {
-      isMqttConnected = false;
-    });
-    _reconnectMqtt();
+  // And update your _handleControlData method:
+  void _handleControlData(Map<dynamic, dynamic> data) {
+    try {
+      print('Received control data: $data');
+      setState(() {
+        // Cek status relay dari berbagai path
+        isSwitchOn = data['status']?.toString() == 'ON';
+      });
+    } catch (e) {
+      print('Error parsing control data: $e');
+    }
   }
 
-  void _reconnectMqtt() {
-    Future.delayed(const Duration(seconds: 5), () {
-      if (!isMqttConnected) {
-        print('Attempting MQTT reconnection...');
-        _setupMqtt();
+  double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
+
+  int? _parseInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+
+  void _updateChartData() {
+    if (powerSpots.length >= 10) {
+      powerSpots.removeAt(0);
+      timeLabels.removeAt(0);
+
+      // Update indices for remaining spots
+      for (int i = 0; i < powerSpots.length; i++) {
+        powerSpots[i] = FlSpot(i.toDouble(), powerSpots[i].y);
       }
-    });
+    }
+
+    double newX = powerSpots.length.toDouble();
+    powerSpots.add(FlSpot(newX, currentPower));
+
+    DateTime now = DateTime.now();
+    timeLabels.add('${now.hour}:${now.minute.toString().padLeft(2, '0')}');
+  }
+
+  Future<void> _sendControlCommand(bool isOn) async {
+    try {
+      String status = isOn ? 'ON' : 'OFF';
+
+      // Update ke berbagai path sesuai struktur Firebase
+      await _controlRef.update({
+        'relayStatus': status,
+        'relay/status': status,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
+
+      print('Control command sent successfully: $status');
+    } catch (e) {
+      print('Error sending control command: $e');
+    }
   }
 
   void _toggleSwitch(bool newValue) {
     setState(() {
       isSwitchOn = newValue;
     });
-
-    if (isMqttConnected) {
-      final builder = MqttClientPayloadBuilder();
-      builder.addString(newValue ? 'ON' : 'OFF');
-      client.publishMessage(
-        'smart_switch/control',
-        MqttQos.atLeastOnce,
-        builder.payload!,
-      );
-    }
+    _sendControlCommand(newValue);
   }
 
   void _loadUserData() {
@@ -234,11 +342,358 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _selectedIndex = index;
     });
+
+    if (index == 0) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomePage()),
+      );
+    } else if (index == 1) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const EducationPage()),
+      );
+    } else if (index == 2) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const ProfilePage()),
+      );
+    }
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: Colors.white,
+      child: Column(
+        children: [
+          Container(
+            height: 200,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  const Color.fromARGB(255, 13, 138, 117),
+                  const Color.fromARGB(255, 24, 142, 122),
+                ],
+              ),
+            ),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    CircleAvatar(
+                      radius: 25,
+                      backgroundColor: Colors.white,
+                      child: Text(
+                        userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
+                        style: GoogleFonts.poppins(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF6BB5A6),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      userName,
+                      style: GoogleFonts.poppins(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      userEmail,
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: Colors.white.withOpacity(0.9),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                _buildDrawerItem(
+                  icon: Icons.home_outlined,
+                  title: 'Home',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (context) => const HomePage()),
+                    );
+                  },
+                  isActive: true,
+                ),
+                _buildDrawerItem(
+                  icon: Icons.power_settings_new,
+                  title: 'Control Saklar 2',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const Saklar2Page(),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  icon: Icons.power_settings_new,
+                  title: 'Control Saklar 3',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const Saklar3Page(),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  icon: Icons.power_settings_new,
+                  title: 'Control Saklar 4',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const Saklar4Page(),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  icon: Icons.logout,
+                  title: 'Logout',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showLogoutConfirmationDialog();
+                  },
+                  isLogout: true,
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(30),
+            child: Text(
+              'Version 1.0.0',
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[400]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    bool isActive = false,
+    bool isLogout = false,
+  }) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color:
+            isActive
+                ? const Color(0xFFABD3CC).withOpacity(0.1)
+                : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        leading: Icon(
+          icon,
+          color:
+              isLogout
+                  ? Colors.red
+                  : isActive
+                  ? const Color(0xFF6BB5A6)
+                  : Colors.grey[600],
+          size: 24,
+        ),
+        title: Text(
+          title,
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+            color:
+                isLogout
+                    ? Colors.red
+                    : isActive
+                    ? const Color(0xFF6BB5A6)
+                    : Colors.black87,
+          ),
+        ),
+        onTap: onTap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  Widget _buildSensorDataDisplay() {
+    return Column(
+      children: [
+        // Power Usage Card (sudah ada di kode utama)
+
+        // Tambahkan card untuk data sensor detail
+        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Sensor Data',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildSensorItem(
+                      'Voltage',
+                      '${currentVoltage.toStringAsFixed(1)} V',
+                      Icons.electric_bolt,
+                      Colors.blue,
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildSensorItem(
+                      'Current',
+                      '${(currentCurrent * 1000).toStringAsFixed(0)} mA',
+                      Icons.battery_charging_full,
+                      Colors.green,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildSensorItem(
+                      'Power',
+                      '${currentPower.toStringAsFixed(1)} W',
+                      Icons.flash_on,
+                      Colors.orange,
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildSensorItem(
+                      'Energy',
+                      '${currentEnergy.toStringAsFixed(3)} kWh',
+                      Icons.energy_savings_leaf,
+                      Colors.purple,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildSensorItem(
+                      'Frequency',
+                      '${currentFrequency.toStringAsFixed(1)} Hz',
+                      Icons.waves,
+                      Colors.teal,
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildSensorItem(
+                      'Power Factor',
+                      '${currentPf.toStringAsFixed(2)}',
+                      Icons.timeline,
+                      Colors.red,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSensorItem(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(right: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 4),
+              Text(
+                title,
+                style: GoogleFonts.poppins(
+                  fontSize: 10,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   void dispose() {
-    client.disconnect();
+    _sensorSubscription.cancel();
+    _controlSubscription.cancel();
     super.dispose();
   }
 
@@ -254,6 +709,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: const Color(0xFFF8F9FA),
+      drawer: _buildDrawer(),
       appBar: AppBar(
         backgroundColor: const Color.fromARGB(255, 13, 138, 117),
         elevation: 0,
@@ -275,12 +731,12 @@ class _HomePageState extends State<HomePage> {
         actions: [
           IconButton(
             icon: Icon(
-              isMqttConnected ? Icons.cloud_done : Icons.cloud_off,
+              isFirebaseConnected ? Icons.cloud_done : Icons.cloud_off,
               color: Colors.white,
             ),
             onPressed: () {
-              if (!isMqttConnected) {
-                _setupMqtt();
+              if (!isFirebaseConnected) {
+                _initializeFirebase();
               }
             },
           ),
@@ -343,6 +799,26 @@ class _HomePageState extends State<HomePage> {
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color:
+                              isFirebaseConnected ? Colors.green : Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isFirebaseConnected ? 'Online' : 'Offline',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color:
+                              isFirebaseConnected ? Colors.green : Colors.red,
                           fontWeight: FontWeight.w400,
                         ),
                       ),
@@ -455,7 +931,8 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 25),
+
+              const SizedBox(height: 20),
 
               // Control Switch Section
               Container(
@@ -528,9 +1005,22 @@ class _HomePageState extends State<HomePage> {
                                 : Colors.grey.shade600,
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Last Update: ${lastUpdateTime.isNotEmpty ? lastUpdateTime : 'N/A'}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
                   ],
                 ),
               ),
+
+              const SizedBox(height: 25),
+
+              // Add the sensor data display here
+              _buildSensorDataDisplay(),
 
               const SizedBox(height: 25),
 
@@ -555,7 +1045,7 @@ class _HomePageState extends State<HomePage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Biaya listrik yang dikeluarkan',
+                          'Power Consumption',
                           style: GoogleFonts.poppins(
                             fontSize: 13,
                             color: Colors.grey.shade600,
@@ -569,7 +1059,7 @@ class _HomePageState extends State<HomePage> {
                               height: 8,
                               decoration: BoxDecoration(
                                 color:
-                                    isMqttConnected
+                                    isFirebaseConnected
                                         ? const Color.fromARGB(
                                           255,
                                           24,
@@ -582,7 +1072,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              isMqttConnected ? 'Live' : 'Offline',
+                              isFirebaseConnected ? 'Live' : 'Offline',
                               style: GoogleFonts.poppins(
                                 fontSize: 12,
                                 color: Colors.grey.shade600,
@@ -597,7 +1087,7 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(height: 12),
 
                     Text(
-                      'Rp ${(currentEnergy * 1500).toStringAsFixed(0)}',
+                      '${currentEnergy.toStringAsFixed(3)} kWh',
                       style: GoogleFonts.poppins(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -605,138 +1095,145 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
 
-                    const SizedBox(height: 20),
-
                     SizedBox(
                       height: 200,
-                      child: LineChart(
-                        LineChartData(
-                          gridData: FlGridData(
-                            show: true,
-                            drawVerticalLine: true,
-                            drawHorizontalLine: true,
-                            verticalInterval: 1,
-                            horizontalInterval: 5000,
-                            getDrawingHorizontalLine: (value) {
-                              return FlLine(
-                                color: Colors.grey.shade200,
-                                strokeWidth: 1,
-                                dashArray: [3, 3],
-                              );
-                            },
-                            getDrawingVerticalLine: (value) {
-                              return FlLine(
-                                color: Colors.grey.shade200,
-                                strokeWidth: 1,
-                                dashArray: [3, 3],
-                              );
-                            },
-                          ),
-                          titlesData: FlTitlesData(
-                            bottomTitles: AxisTitles(
-                              sideTitles: SideTitles(
-                                showTitles: true,
-                                reservedSize: 30,
-                                interval: 1,
-                                getTitlesWidget: (value, meta) {
-                                  const times = [
-                                    '13:00',
-                                    '14:00',
-                                    '15:00',
-                                    '16:00',
-                                    '17:00',
-                                    '18:00',
-                                  ];
-                                  if (value.toInt() < times.length) {
-                                    return Padding(
-                                      padding: const EdgeInsets.only(top: 8.0),
-                                      child: Text(
-                                        times[value.toInt()],
-                                        style: GoogleFonts.poppins(
-                                          color: Colors.grey.shade600,
-                                          fontSize: 10,
+                      child:
+                          powerSpots.isEmpty
+                              ? Center(
+                                child: Text(
+                                  'Menunggu data sensor...',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.grey,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              )
+                              : LineChart(
+                                LineChartData(
+                                  gridData: FlGridData(
+                                    show: true,
+                                    drawVerticalLine: true,
+                                    drawHorizontalLine: true,
+                                    verticalInterval: 1,
+                                    horizontalInterval: 500,
+                                    getDrawingHorizontalLine: (value) {
+                                      return FlLine(
+                                        color: Colors.grey.shade200,
+                                        strokeWidth: 1,
+                                        dashArray: [3, 3],
+                                      );
+                                    },
+                                    getDrawingVerticalLine: (value) {
+                                      return FlLine(
+                                        color: Colors.grey.shade200,
+                                        strokeWidth: 1,
+                                        dashArray: [3, 3],
+                                      );
+                                    },
+                                  ),
+                                  titlesData: FlTitlesData(
+                                    bottomTitles: AxisTitles(
+                                      sideTitles: SideTitles(
+                                        showTitles: true,
+                                        reservedSize: 30,
+                                        interval: 1,
+                                        getTitlesWidget: (value, meta) {
+                                          if (value.toInt() <
+                                              timeLabels.length) {
+                                            return Padding(
+                                              padding: const EdgeInsets.only(
+                                                top: 8.0,
+                                              ),
+                                              child: Text(
+                                                timeLabels[value.toInt()],
+                                                style: GoogleFonts.poppins(
+                                                  color: Colors.grey.shade600,
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                          return const Text('');
+                                        },
+                                      ),
+                                    ),
+                                    leftTitles: AxisTitles(
+                                      sideTitles: SideTitles(
+                                        showTitles: true,
+                                        reservedSize: 55,
+                                        interval: 500,
+                                        getTitlesWidget: (value, meta) {
+                                          return Text(
+                                            '${value.toInt()}W',
+                                            style: GoogleFonts.poppins(
+                                              color: Colors.grey.shade600,
+                                              fontSize: 9,
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    topTitles: AxisTitles(
+                                      sideTitles: SideTitles(showTitles: false),
+                                    ),
+                                    rightTitles: AxisTitles(
+                                      sideTitles: SideTitles(showTitles: false),
+                                    ),
+                                  ),
+                                  borderData: FlBorderData(show: false),
+                                  minX: 0,
+                                  maxX:
+                                      powerSpots.length > 0
+                                          ? powerSpots.length - 1
+                                          : 0,
+                                  minY: 0,
+                                  maxY:
+                                      currentPower *
+                                      1.5, // Dynamic max based on current power
+                                  lineBarsData: [
+                                    LineChartBarData(
+                                      spots: powerSpots,
+                                      isCurved: true,
+                                      color: const Color.fromARGB(
+                                        255,
+                                        222,
+                                        170,
+                                        72,
+                                      ),
+                                      barWidth: 3,
+                                      isStrokeCapRound: true,
+                                      dotData: FlDotData(show: false),
+                                      belowBarData: BarAreaData(
+                                        show: true,
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topCenter,
+                                          end: Alignment.bottomCenter,
+                                          colors: [
+                                            const Color.fromARGB(
+                                              255,
+                                              222,
+                                              170,
+                                              72,
+                                            ).withOpacity(0.3),
+                                            const Color.fromARGB(
+                                              255,
+                                              222,
+                                              170,
+                                              72,
+                                            ).withOpacity(0.1),
+                                            const Color.fromARGB(
+                                              255,
+                                              222,
+                                              170,
+                                              72,
+                                            ).withOpacity(0.05),
+                                          ],
                                         ),
                                       ),
-                                    );
-                                  }
-                                  return const Text('');
-                                },
-                              ),
-                            ),
-                            leftTitles: AxisTitles(
-                              sideTitles: SideTitles(
-                                showTitles: true,
-                                reservedSize: 55,
-                                interval: 5000,
-                                getTitlesWidget: (value, meta) {
-                                  return Text(
-                                    'Rp ${(value / 1000).toInt()}k',
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.grey.shade600,
-                                      fontSize: 9,
                                     ),
-                                  );
-                                },
-                              ),
-                            ),
-                            topTitles: AxisTitles(
-                              sideTitles: SideTitles(showTitles: false),
-                            ),
-                            rightTitles: AxisTitles(
-                              sideTitles: SideTitles(showTitles: false),
-                            ),
-                          ),
-                          borderData: FlBorderData(show: false),
-                          minX: 0,
-                          maxX: 5,
-                          minY: 0,
-                          maxY: 20000,
-                          lineBarsData: [
-                            LineChartBarData(
-                              spots: [
-                                FlSpot(0, 12000),
-                                FlSpot(1, 16000),
-                                FlSpot(2, 14500),
-                                FlSpot(3, 15000),
-                                FlSpot(4, 15500),
-                                FlSpot(5, 13000),
-                              ],
-                              isCurved: true,
-                              color: const Color.fromARGB(255, 222, 170, 72),
-                              barWidth: 3,
-                              isStrokeCapRound: true,
-                              dotData: FlDotData(show: false),
-                              belowBarData: BarAreaData(
-                                show: true,
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    const Color.fromARGB(
-                                      255,
-                                      222,
-                                      170,
-                                      72,
-                                    ).withOpacity(0.3),
-                                    const Color.fromARGB(
-                                      255,
-                                      222,
-                                      170,
-                                      72,
-                                    ).withOpacity(0.1),
-                                    const Color.fromARGB(
-                                      255,
-                                      222,
-                                      170,
-                                      72,
-                                    ).withOpacity(0.05),
                                   ],
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
                     ),
                   ],
                 ),

@@ -4,6 +4,7 @@ import 'package:smart_switch/pages/education/detail_education_page.dart';
 import 'package:smart_switch/pages/home/home_page.dart';
 import 'package:smart_switch/pages/profile/profile_page.dart';
 import 'package:flutter/services.dart';
+import 'package:smart_switch/services/firestore_education_service.dart';
 
 class EducationPage extends StatefulWidget {
   const EducationPage({super.key});
@@ -14,31 +15,36 @@ class EducationPage extends StatefulWidget {
 
 class _EducationPageState extends State<EducationPage> {
   int _selectedIndex = 1;
+  final FirestoreEducationService _educationService =
+      FirestoreEducationService();
+  List<Map<String, dynamic>> _educationData = [];
+  bool _isLoading = true;
 
-  // Data edukasi dengan informasi lengkap
-  final List<Map<String, dynamic>> _educationData = [
-    {
-      'title': 'Cara Mengukur Daya, Arus, Tegangan dan Hambatan',
-      'subtitle': 'Pelajari cara mengukur komponen listrik dengan benar',
-      'image': 'assets/multimeter.jpg',
-      'difficulty': 'MUDAH',
-      'estimatedTime': '10-15 menit',
-    },
-    {
-      'title': 'Pemahaman Dasar Rangkaian Listrik',
-      'subtitle': 'Memahami konsep dasar dalam rangkaian elektronik',
-      'image': 'assets/electrical.jpg',
-      'difficulty': 'SEDANG',
-      'estimatedTime': '15-20 menit',
-    },
-    {
-      'title': 'Keselamatan Kerja dengan Listrik',
-      'subtitle': 'Tips dan cara kerja aman saat bekerja dengan listrik',
-      'image': 'assets/instalasi.jpg',
-      'difficulty': 'MUDAH',
-      'estimatedTime': '8-12 menit',
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadEducationData();
+  }
+
+  Future<void> _loadEducationData() async {
+    try {
+      // Inisialisasi data pertama kali (bisa dihapus setelah data ada di Firestore)
+      await _educationService.initializeEducationData();
+
+      final data = await _educationService.getEducationData();
+      setState(() {
+        _educationData = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Gagal memuat data: $e')));
+    }
+  }
 
   void _onItemTapped(int index) {
     if (index == 0) {
@@ -90,46 +96,55 @@ class _EducationPageState extends State<EducationPage> {
         centerTitle: true,
       ),
       body: RefreshIndicator(
-        onRefresh: () async {
-          // Simulasi refresh
-          await Future.delayed(const Duration(seconds: 1));
-        },
+        onRefresh: _loadEducationData,
         color: const Color.fromARGB(255, 13, 138, 117),
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children:
-                _educationData
-                    .map(
-                      (education) => Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: _buildEducationCard(
-                          title: education['title'],
-                          subtitle: education['subtitle'],
-                          image: education['image'],
-                          difficulty: education['difficulty'],
-                          estimatedTime: education['estimatedTime'],
-                          onTap:
-                              () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder:
-                                      (context) => DetailEducationPage(
-                                        imagePath: education['image'],
-                                        title: education['title'],
-                                        difficulty: education['difficulty'],
-                                        estimatedTime:
-                                            education['estimatedTime'],
-                                      ),
+        child:
+            _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children:
+                        _educationData.isEmpty
+                            ? [
+                              const SizedBox(height: 100),
+                              Text(
+                                'Tidak ada data edukasi',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  color: Colors.grey,
                                 ),
                               ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-          ),
-        ),
+                            ]
+                            : _educationData
+                                .map(
+                                  (education) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 16),
+                                    child: _buildEducationCard(
+                                      title: education['title'],
+                                      subtitle: education['subtitle'],
+                                      image: education['image'],
+                                      difficulty: education['difficulty'],
+                                      estimatedTime: education['estimatedTime'],
+                                      onTap:
+                                          () => Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder:
+                                                  (context) =>
+                                                      DetailEducationPage(
+                                                        educationId:
+                                                            education['id'],
+                                                      ),
+                                            ),
+                                          ),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                  ),
+                ),
       ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,

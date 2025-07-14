@@ -1,89 +1,77 @@
-import 'dart:convert';
-import 'dart:async';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
+import 'dart:convert';
 
 class MQTTService {
   late MqttServerClient client;
   final String server = 'broker.hivemq.com';
   final int port = 1883;
-  final String clientId = 'flutter_client_';
-  final String statusTopic = 'smart_switch/status';
-  final String controlTopic = 'smart_switch/control';
-  final String pzemTopic = 'smart_switch/pzem';
+  String clientId = 'flutter_client_';
 
-  StreamController<bool>? _statusController;
-  StreamController<Map<String, dynamic>>? _pzemController;
-
-  MQTTService() {
-    client = MqttServerClient(
-      server,
-      clientId + DateTime.now().millisecondsSinceEpoch.toString(),
-    );
-    client.logging(on: false);
-    client.keepAlivePeriod = 30;
-    client.onDisconnected = _onDisconnected;
-    client.onConnected = _onConnected;
-    client.onSubscribed = _onSubscribed;
-  }
-
-  Stream<bool> get statusStream => _statusController!.stream;
-  Stream<Map<String, dynamic>> get pzemStream => _pzemController!.stream;
+  Function(String)? onStatusUpdate;
+  Function(Map<String, dynamic>)? onPZEMData;
 
   Future<void> connect() async {
-    _statusController = StreamController<bool>();
-    _pzemController = StreamController<Map<String, dynamic>>();
+    clientId += DateTime.now().millisecondsSinceEpoch.toString();
+    client = MqttServerClient(server, clientId);
+    client.port = port;
+    client.keepAlivePeriod = 60;
+    client.onDisconnected = _onDisconnected;
+    client.logging(on: false);
+
+    final connMess = MqttConnectMessage()
+        .withClientIdentifier(clientId)
+        .startClean()
+        .keepAliveFor(60);
+    client.connectionMessage = connMess;
 
     try {
       await client.connect();
-      client.subscribe(statusTopic, MqttQos.atLeastOnce);
-      client.subscribe(pzemTopic, MqttQos.atLeastOnce);
-      client.updates!.listen((List<MqttReceivedMessage<MqttMessage>> messages) {
-        final MqttPublishMessage message =
-            messages[0].payload as MqttPublishMessage;
-        final payload = MqttPublishPayload.bytesToStringAsString(
-          message.payload.message,
-        );
-
-        if (messages[0].topic == statusTopic) {
-          _statusController!.add(payload == 'ON');
-        } else if (messages[0].topic == pzemTopic) {
-          try {
-            final data = Map<String, dynamic>.from(json.decode(payload));
-            _pzemController!.add(data);
-          } catch (e) {
-            print('Error parsing PZEM data: $e');
-          }
-        }
-      });
     } catch (e) {
       print('Exception: $e');
       client.disconnect();
+      return;
+    }
+
+    if (client.connectionStatus?.state == MqttConnectionState.connected) {
+      print('MQTT connected');
+
+      client.subscribe('smart_switch/state_update', MqttQos.atLeastOnce);
+
+      client.updates!.listen((List<MqttReceivedMessage<MqttMessage>> c) {
+        final recMess = c[0].payload as MqttPublishMessage;
+        final payload = MqttPublishPayload.bytesToStringAsString(
+          recMess.payload.message,
+        );
+
+        try {
+          final data = jsonDecode(payload);
+          if (data is Map<String, dynamic>) {
+            if (onPZEMData != null) {
+              onPZEMData!(data);
+            }
+          }
+        } catch (e) {
+          print('Error parsing MQTT message: $e');
+        }
+      });
+    } else {
+      print('MQTT connection failed');
     }
   }
 
-  void _onConnected() {
-    print('MQTT Connected');
-  }
-
-  void _onSubscribed(String topic) {
-    print('Subscribed to $topic');
-  }
-
   void _onDisconnected() {
-    print('MQTT Disconnected');
+    print('MQTT disconnected');
+    Future.delayed(const Duration(seconds: 5), () => connect());
   }
 
-  void controlSwitch(bool state) {
-    final message = state ? 'ON' : 'OFF';
+  void publish(String topic, String message) {
     final builder = MqttClientPayloadBuilder();
     builder.addString(message);
-    client.publishMessage(controlTopic, MqttQos.atLeastOnce, builder.payload!);
+    client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
   }
 
-  Future<void> disconnect() async {
+  void disconnect() {
     client.disconnect();
-    _statusController?.close();
-    _pzemController?.close();
   }
 }
