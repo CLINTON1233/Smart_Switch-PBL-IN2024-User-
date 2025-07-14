@@ -40,7 +40,7 @@ class _SplashScreenState extends State<SplashScreen>
     _controller.forward();
 
     // Navigasi ke login setelah 3 detik
-    Future.delayed(const Duration(seconds: 5), () {
+    Future.delayed(const Duration(seconds: 2), () {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const SplashScreen2()),
