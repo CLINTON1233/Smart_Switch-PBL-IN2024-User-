@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:mqtt_client/mqtt_client.dart';
-import 'package:mqtt_client/mqtt_server_client.dart';
-import 'dart:convert';
 
 import 'package:smart_switch/pages/auth/login_page.dart';
 import 'package:smart_switch/pages/education/education_page.dart';
@@ -36,10 +34,6 @@ class _HomePageState extends State<HomePage> {
   double temperature = 28.0;
   bool isLoadingWeather = true;
 
-  // Variabel MQTT
-  late MqttServerClient client;
-  bool isMqttConnected = false;
-
   // Variabel sensor
   double currentVoltage = 0.0;
   double currentCurrent = 0.0;
@@ -48,96 +42,67 @@ class _HomePageState extends State<HomePage> {
   double currentFrequency = 0.0;
   double currentPf = 0.0;
 
+  // Firebase Database
+  late DatabaseReference _databaseRef;
+  late DatabaseReference _powerDataRef;
+  late DatabaseReference _relayStatusRef;
+  late DatabaseReference _relayControlRef;
+  late DatabaseReference _powerDataRelayStatusRef;
+  bool _isFirebaseConnected = false;
+
   @override
   void initState() {
     super.initState();
     _loadUserData();
     _loadWeatherData();
-    _setupMqtt();
+    _setupFirebase();
   }
 
-  Future<void> _setupMqtt() async {
-    client = MqttServerClient(
-      'broker.hivemq.com',
-      'flutter_client_${DateTime.now().millisecondsSinceEpoch}',
-    );
-    client.logging(on: false);
-    client.onConnected = _onMqttConnected;
-    client.onDisconnected = _onMqttDisconnected;
+  void _setupFirebase() {
+    _databaseRef = FirebaseDatabase.instance.ref();
+    _powerDataRef = _databaseRef.child('powerData');
+    _relayStatusRef = _databaseRef.child('relay/status');
+    _relayControlRef = _databaseRef.child('relay_control');
+    _powerDataRelayStatusRef = _databaseRef.child('powerData/relayStatus');
 
-    final connMessage = MqttConnectMessage()
-        .withClientIdentifier('flutter_client')
-        .startClean()
-        .withWillQos(MqttQos.atLeastOnce);
+    // Set connection state listener
+    FirebaseDatabase.instance.setPersistenceEnabled(true);
+    _databaseRef.onDisconnect().remove();
 
-    client.connectionMessage = connMessage;
-
-    try {
-      await client.connect();
-    } catch (e) {
-      print('MQTT Connection Exception: $e');
-      _reconnectMqtt();
-    }
-
-    if (client.connectionStatus?.state == MqttConnectionState.connected) {
-      _onMqttConnected();
-    }
-  }
-
-  void _onMqttConnected() {
-    print('MQTT Connected');
-    setState(() {
-      isMqttConnected = true;
+    // Listen for connection state
+    FirebaseDatabase.instance.goOnline().then((_) {
+      setState(() {
+        _isFirebaseConnected = true;
+      });
     });
 
-    // Subscribe ke topic
-    client.subscribe('smart_switch/status', MqttQos.atLeastOnce);
-    client.subscribe('smart_switch/pzem', MqttQos.atLeastOnce);
-
-    client.updates?.listen((List<MqttReceivedMessage<MqttMessage>> c) {
-      final recMess = c[0].payload as MqttPublishMessage;
-      final payload = MqttPublishPayload.bytesToStringAsString(
-        recMess.payload.message,
-      );
-      final topic = c[0].topic;
-
-      print('Received message: $topic - $payload');
-
-      if (topic == 'smart_switch/status') {
+    // Setup listeners for data changes
+    _powerDataRef.onValue.listen((DatabaseEvent event) {
+      final data = event.snapshot.value as Map<dynamic, dynamic>?;
+      if (data != null) {
         setState(() {
-          isSwitchOn = payload == 'ON';
+          currentVoltage = double.tryParse(data['voltage'].toString()) ?? 0.0;
+          currentCurrent = double.tryParse(data['current'].toString()) ?? 0.0;
+          currentPower = double.tryParse(data['power'].toString()) ?? 0.0;
+          currentEnergy = double.tryParse(data['energy'].toString()) ?? 0.0;
+          currentFrequency =
+              double.tryParse(data['frequency'].toString()) ?? 0.0;
+          currentPf = double.tryParse(data['powerFactor'].toString()) ?? 0.0;
         });
-      } else if (topic == 'smart_switch/pzem') {
-        try {
-          final data = json.decode(payload);
-          setState(() {
-            currentVoltage = data['voltage']?.toDouble() ?? 0.0;
-            currentCurrent = data['current']?.toDouble() ?? 0.0;
-            currentPower = data['power']?.toDouble() ?? 0.0;
-            currentEnergy = data['energy']?.toDouble() ?? 0.0;
-            currentFrequency = data['frequency']?.toDouble() ?? 0.0;
-            currentPf = data['pf']?.toDouble() ?? 0.0;
-          });
-        } catch (e) {
-          print('Error parsing PZEM data: $e');
-        }
       }
     });
-  }
 
-  void _onMqttDisconnected() {
-    print('MQTT Disconnected');
-    setState(() {
-      isMqttConnected = false;
-    });
-    _reconnectMqtt();
-  }
+    // Gunakan path utama yang digunakan perangkat IoT
+    _relayControlRef.onValue.listen((DatabaseEvent event) {
+      final status = event.snapshot.value as String?;
+      if (status != null) {
+        setState(() {
+          isSwitchOn = status == 'ON';
+        });
 
-  void _reconnectMqtt() {
-    Future.delayed(const Duration(seconds: 5), () {
-      if (!isMqttConnected) {
-        print('Attempting MQTT reconnection...');
-        _setupMqtt();
+        // Sync ke path lainnya
+        _relayStatusRef.set(status);
+        _powerDataRelayStatusRef.set(status);
       }
     });
   }
@@ -147,15 +112,28 @@ class _HomePageState extends State<HomePage> {
       isSwitchOn = newValue;
     });
 
-    if (isMqttConnected) {
-      final builder = MqttClientPayloadBuilder();
-      builder.addString(newValue ? 'ON' : 'OFF');
-      client.publishMessage(
-        'smart_switch/control',
-        MqttQos.atLeastOnce,
-        builder.payload!,
-      );
-    }
+    final status = newValue ? 'ON' : 'OFF';
+    print('Attempting to set relay status to: $status');
+
+    _relayControlRef
+        .set(status)
+        .then((_) {
+          print('Successfully updated relay_control');
+          return _relayStatusRef.set(status);
+        })
+        .then((_) {
+          print('Successfully updated relay/status');
+          return _powerDataRelayStatusRef.set(status);
+        })
+        .then((_) {
+          print('Successfully updated powerData/relayStatus');
+        })
+        .catchError((error) {
+          print('Error updating relay status: $error');
+          setState(() {
+            isSwitchOn = !newValue; // Revert if failed
+          });
+        });
   }
 
   void _loadUserData() {
@@ -449,7 +427,8 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    client.disconnect();
+    _powerDataRef.onDisconnect();
+    _relayStatusRef.onDisconnect();
     super.dispose();
   }
 
@@ -487,12 +466,12 @@ class _HomePageState extends State<HomePage> {
         actions: [
           IconButton(
             icon: Icon(
-              isMqttConnected ? Icons.cloud_done : Icons.cloud_off,
+              _isFirebaseConnected ? Icons.cloud_done : Icons.cloud_off,
               color: Colors.white,
             ),
             onPressed: () {
-              if (!isMqttConnected) {
-                _setupMqtt();
+              if (!_isFirebaseConnected) {
+                _setupFirebase();
               }
             },
           ),
@@ -781,7 +760,7 @@ class _HomePageState extends State<HomePage> {
                               height: 8,
                               decoration: BoxDecoration(
                                 color:
-                                    isMqttConnected
+                                    _isFirebaseConnected
                                         ? const Color.fromARGB(
                                           255,
                                           24,
@@ -794,7 +773,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              isMqttConnected ? 'Live' : 'Offline',
+                              _isFirebaseConnected ? 'Live' : 'Offline',
                               style: GoogleFonts.poppins(
                                 fontSize: 12,
                                 color: Colors.grey.shade600,
