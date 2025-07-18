@@ -8,6 +8,11 @@ import 'package:mqtt_client/mqtt_server_client.dart';
 import 'dart:convert';
 
 import 'package:smart_switch/pages/auth/login_page.dart';
+import 'package:smart_switch/pages/education/education_page.dart';
+import 'package:smart_switch/pages/home/saklar2_page.dart';
+import 'package:smart_switch/pages/home/saklar3_page.dart';
+import 'package:smart_switch/pages/home/saklar4_page.dart';
+import 'package:smart_switch/pages/profile/profile_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -180,6 +185,195 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // Build Drawer Menu
+  Widget _buildDrawer() {
+    return Drawer(
+      backgroundColor: Colors.white,
+      child: Column(
+        children: [
+          // Drawer Header
+          Container(
+            height: 200,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  const Color.fromARGB(255, 13, 138, 117),
+                  const Color.fromARGB(255, 24, 142, 122),
+                ],
+              ),
+            ),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    CircleAvatar(
+                      radius: 25,
+                      backgroundColor: Colors.white,
+                      child: Text(
+                        userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
+                        style: GoogleFonts.poppins(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF6BB5A6),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      userName,
+                      style: GoogleFonts.poppins(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      userEmail,
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: Colors.white.withOpacity(0.9),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Menu Items
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                _buildDrawerItem(
+                  icon: Icons.home_outlined,
+                  title: 'Home',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (context) => const HomePage()),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  icon: Icons.power_settings_new,
+                  title: 'Control Saklar 2',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const Saklar2Page(),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  icon: Icons.power_settings_new,
+                  title: 'Control Saklar 3',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const Saklar3Page(),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  icon: Icons.power_settings_new,
+                  title: 'Control Saklar 4',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const Saklar4Page(),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  icon: Icons.logout,
+                  title: 'Logout',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showLogoutConfirmationDialog();
+                  },
+                  isLogout: true,
+                ),
+              ],
+            ),
+          ),
+
+          // App Version
+          Container(
+            padding: const EdgeInsets.all(30),
+            child: Text(
+              'Version 1.0.0',
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[400]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build Drawer Item
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    bool isActive = false,
+    bool isLogout = false,
+  }) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color:
+            isActive
+                ? const Color(0xFFABD3CC).withOpacity(0.1)
+                : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        leading: Icon(
+          icon,
+          color:
+              isLogout
+                  ? Colors.red
+                  : isActive
+                  ? const Color(0xFF6BB5A6)
+                  : Colors.grey[600],
+          size: 24,
+        ),
+        title: Text(
+          title,
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+            color:
+                isLogout
+                    ? Colors.red
+                    : isActive
+                    ? const Color(0xFF6BB5A6)
+                    : Colors.black87,
+          ),
+        ),
+        onTap: onTap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
   void _showLogoutConfirmationDialog() {
     showDialog(
       context: context,
@@ -234,6 +428,23 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _selectedIndex = index;
     });
+
+    if (index == 0) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomePage()),
+      );
+    } else if (index == 1) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const EducationPage()),
+      );
+    } else if (index == 2) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const ProfilePage()),
+      );
+    }
   }
 
   @override
@@ -254,6 +465,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: const Color(0xFFF8F9FA),
+      drawer: _buildDrawer(),
       appBar: AppBar(
         backgroundColor: const Color.fromARGB(255, 13, 138, 117),
         elevation: 0,
