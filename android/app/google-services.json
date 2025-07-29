@@ -1,0 +1,68 @@
+{
+  "project_info": {
+    "project_number": "145953908614",
+    "firebase_url": "https://smart-switch-pbl-in2024-db81c-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "smart-switch-pbl-in2024-db81c",
+    "storage_bucket": "smart-switch-pbl-in2024-db81c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:145953908614:android:e8a276fc9ba56fc9a92e07",
+        "android_client_info": {
+          "package_name": "com.example.admin_smart_switch"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD15JQa9cvOrwY0K9_FRjWk3es4i38WExg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:145953908614:android:59536808bdcd0c9da92e07",
+        "android_client_info": {
+          "package_name": "com.example.smart_switch"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD15JQa9cvOrwY0K9_FRjWk3es4i38WExg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:145953908614:android:0a3ab5041ba9968ca92e07",
+        "android_client_info": {
+          "package_name": "com.example.smart_switch_baru"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD15JQa9cvOrwY0K9_FRjWk3es4i38WExg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

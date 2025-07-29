@@ -1,0 +1,17 @@
+[
+  {
+    "imageUrl": "https://firebasestorage.googleapis.com/v0/b/your-app.appspot.com/o/edukasi_1.jpg?alt=media",
+    "title": "Bagaimana cara mengukur daya, arus, tegangan, dan hambatan yang benar ?",
+    "description": "Tegangan, arus, dan hambatan adalah elemen utama dalam kelistrikan..."
+  },
+  {
+    "imageUrl": "https://firebasestorage.googleapis.com/v0/b/your-app.appspot.com/o/edukasi_2.jpg?alt=media",
+    "title": "Bagaimana cara menghindari korsleting listrik di rumah?",
+    "description": "Korsleting listrik terjadi ketika arus listrik mengalir melalui jalur yang tidak semestinya..."
+  },
+  {
+    "imageUrl": "https://firebasestorage.googleapis.com/v0/b/your-app.appspot.com/o/edukasi_3.jpg?alt=media",
+    "title": "Bagaimana cara menghemat pengeluaran listrik di rumah?",
+    "description": "Untuk menghemat listrik, biasakan mematikan lampu dan peralatan elektronik saat tidak digunakan..."
+  }
+]
