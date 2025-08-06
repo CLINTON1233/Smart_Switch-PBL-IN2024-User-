@@ -8,7 +8,7 @@ class FirebaseService {
 
   // Stream untuk data sensor
   Stream<SensorData> getSensorDataStream() {
-    return _database.child('sensor_data').onValue.map((event) {
+    return _database.child('powerData').onValue.map((event) {
       if (event.snapshot.exists) {
         return SensorData.fromJson(
           Map<String, dynamic>.from(event.snapshot.value as Map),
